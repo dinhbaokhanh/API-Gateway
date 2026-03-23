@@ -25,7 +25,6 @@ func NewReverseProxy(target string) (http.Handler, error) {
 		
 		// QUAN TRỌNG: Ghi đè header "Host" của request bằng Host của server đích (VD: chatbox-server.onrender.com)
 		// Nếu không có dòng này, Go sẽ lấy Host gốc là localhost:8080 gửi đi
-		// Cloudflare (bảo vệ Render) nhận thấy Host "localhost:8080" không khớp với domain thực tế nên sẽ trả về lỗi 403 Forbidden.
 		req.Host = targetURL.Host
 	}
 

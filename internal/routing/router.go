@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/dinhbaokhanh/Final-Project-API-Gateway/internal/config"
+	"github.com/dinhbaokhanh/Final-Project-API-Gateway/internal/middleware"
 	"github.com/dinhbaokhanh/Final-Project-API-Gateway/internal/proxy"
 )
 
@@ -18,6 +19,9 @@ func NewRouter(cfg *config.GatewayConfig) (http.Handler, error) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+
+	// Khởi tạo factory middleware JWT
+	authMiddleware := middleware.AuthMiddlewareProvider(cfg.JWT)
 
 	// Duyệt qua tất cả các endpoint trong cấu hình để tạo route động
 	for _, endpoint := range cfg.Endpoints {
@@ -42,9 +46,25 @@ func NewRouter(cfg *config.GatewayConfig) (http.Handler, error) {
 		// Đăng ký route vào bộ định tuyến
 		fmt.Printf("[Router] Đã đăng ký %-30s -> chuyển hướng sang %s\n", pattern, targetURL)
 		
-		// Go's ReverseProxy sẽ tự động giữ nguyên đường dẫn (r.URL.Path) và gắn nó vào đằng sau TargetURL.
-		// VD: Khách gọi POST /api/v1/chat/123 -> Sẽ forward đúng POST {targetURL}/api/v1/chat/123
-		mux.Handle(pattern, reverseProxy)
+		var handler http.Handler = reverseProxy
+		
+		// 1. JWT Auth Middleware (trong cùng)
+		if endpoint.AuthRequired {
+			handler = authMiddleware(handler)
+		}
+
+		// 2. Chống giả mạo Header X-User-* từ Client (giữa)
+		nextHandler := handler
+		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.Header.Del("X-User-ID")
+			r.Header.Del("X-User-Role")
+			nextHandler.ServeHTTP(w, r)
+		})
+
+		// 3. Rate Limiter (ngoài cùng)
+		handler = middleware.RateLimitMiddleware(handler)
+
+		mux.Handle(pattern, handler)
 	}
 
 	return mux, nil

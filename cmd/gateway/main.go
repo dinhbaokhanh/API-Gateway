@@ -2,9 +2,11 @@ package main
 
 import (
 	"log"
+	"os"
 
 	"github.com/dinhbaokhanh/Final-Project-API-Gateway/internal/app"
 	"github.com/dinhbaokhanh/Final-Project-API-Gateway/internal/config"
+	"github.com/dinhbaokhanh/Final-Project-API-Gateway/internal/middleware"
 )
 
 func main() {
@@ -13,6 +15,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("Lỗi không thể tải file cấu hình Gateway: %v", err)
 	}
+
+	// Khởi chạy kết nối Redis cho cơ chế Blacklist token
+	redisAddr := os.Getenv("REDIS_URL")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	middleware.InitRedis(redisAddr)
+	middleware.InitJWT()
 
 	// Bước 2: Khởi tạo ứng dụng Gateway (Core App) dựa trên cấu hình đã đọc
 	gateway, err := app.New(cfg)

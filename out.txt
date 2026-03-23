@@ -1,0 +1,25 @@
+=== RUN   TestAuthMiddleware
+redis: 2026/03/23 20:03:39 pool.go:617: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6379: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/03/23 20:03:39 pool.go:617: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6379: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/03/23 20:03:40 pool.go:617: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6379: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/03/23 20:03:40 pool.go:617: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6379: connectex: No connection could be made because the target machine actively refused it.
+--- FAIL: TestAuthMiddleware (2.11s)
+panic: Kh├┤ng thß╗â kß║┐t nß╗æi tß╗¢i Redis: dial tcp [::1]:6379: connectex: No connection could be made because the target machine actively refused it. [recovered, repanicked]
+
+goroutine 21 [running]:
+testing.tRunner.func1.2({0x7ff66bfe5640, 0xffb0b206460})
+	C:/Program Files/Go/src/testing/testing.go:1974 +0x239
+testing.tRunner.func1()
+	C:/Program Files/Go/src/testing/testing.go:1977 +0x349
+panic({0x7ff66bfe5640?, 0xffb0b206460?})
+	C:/Program Files/Go/src/runtime/panic.go:860 +0x13a
+github.com/dinhbaokhanh/Final-Project-API-Gateway/internal/middleware.InitRedis({0x7ff66c091fc7, 0xe})
+	D:/Projects/PTIT Gateway/internal/middleware/blacklist.go:21 +0x168
+github.com/dinhbaokhanh/Final-Project-API-Gateway/internal/middleware.TestAuthMiddleware(0xffb0b18e200)
+	D:/Projects/PTIT Gateway/internal/middleware/auth_test.go:16 +0x36
+testing.tRunner(0xffb0b18e200, 0x7ff66c0b11a0)
+	C:/Program Files/Go/src/testing/testing.go:2036 +0xc3
+created by testing.(*T).Run in goroutine 1
+	C:/Program Files/Go/src/testing/testing.go:2101 +0x4a9
+FAIL	github.com/dinhbaokhanh/Final-Project-API-Gateway/internal/middleware	2.873s
+FAIL

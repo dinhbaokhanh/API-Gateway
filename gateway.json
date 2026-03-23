@@ -1,5 +1,9 @@
 {
   "port": 8080,
+  "jwt": {
+    "issuer": "ptit-backend",
+    "audience": "ptit-gateway"
+  },
   "__comment": "Đây là VÍ DỤ cấu hình của PTIT Gateway. Nó đóng vai trò làm BFF định tuyến từ port 8080 đến các Microservices cấp dưới. CÓ THỂ THAY ĐỔI SAU",
   "endpoints": [
     {
@@ -18,6 +22,7 @@
     {
       "endpoint": "/api/users/{id}",
       "method": "GET",
+      "auth_required": true,
       "backend": [
         {
           "host": [
@@ -43,6 +48,7 @@
     {
       "endpoint": "/api/posts/new",
       "method": "POST",
+      "auth_required": true,
       "backend": [
         {
           "host": [
