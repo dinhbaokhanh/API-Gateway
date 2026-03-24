@@ -10,58 +10,57 @@ import (
 	"github.com/dinhbaokhanh/Final-Project-API-Gateway/internal/proxy"
 )
 
-// NewRouter khởi tạo một HTTP Handler để xử lý định tuyến dựa trên file cấu hình
+// NewRouter xây dựng HTTP handler với đầy đủ middleware per-route từ cấu hình JSON
 func NewRouter(cfg *config.GatewayConfig) (http.Handler, error) {
 	mux := http.NewServeMux()
 
-	// Khai báo route kiểm tra Gateway
+	// Route kiểm tra trạng thái Gateway
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	// Khởi tạo factory middleware JWT
+	// Tạo factory middleware JWT dùng chung cho tất cả route cần xác thực
 	authMiddleware := middleware.AuthMiddlewareProvider(cfg.JWT)
 
-	// Duyệt qua tất cả các endpoint trong cấu hình để tạo route động
 	for _, endpoint := range cfg.Endpoints {
 		if len(endpoint.Backend) == 0 || len(endpoint.Backend[0].Host) == 0 {
-			continue 
+			continue
 		}
 
 		targetURL := endpoint.Backend[0].Host[0]
-		
-		// Khởi tạo một bộ trung chuyển (Reverse Proxy) trỏ tới backend đích
+
 		reverseProxy, err := proxy.NewReverseProxy(targetURL)
 		if err != nil {
 			return nil, fmt.Errorf("URL backend không hợp lệ cho endpoint %s: %w", endpoint.Endpoint, err)
 		}
 
-		// Tận dụng tính năng routing tiên tiến của Go 1.22+: Khai báo rõ HTTP Method (Ví dụ "POST /api/v1/user/login")
+		// Tạo pattern routing theo chuẩn Go 1.22+: "METHOD /path"
 		pattern := endpoint.Endpoint
 		if endpoint.Method != "" && endpoint.Method != "ANY" {
 			pattern = fmt.Sprintf("%s %s", strings.ToUpper(endpoint.Method), endpoint.Endpoint)
 		}
 
-		// Đăng ký route vào bộ định tuyến
-		fmt.Printf("[Router] Đã đăng ký %-30s -> chuyển hướng sang %s\n", pattern, targetURL)
-		
+		fmt.Printf("[Router] %-35s -> %s\n", pattern, targetURL)
+
+		// Xây chuỗi handler từ trong ra ngoài:
+		// reverseProxy -> (JWT Auth nếu cần) -> Xóa header giả mạo -> RateLimit
 		var handler http.Handler = reverseProxy
-		
-		// 1. JWT Auth Middleware (trong cùng)
+
+		// Tầng 1 — Xác thực JWT (chỉ áp dụng nếu route yêu cầu)
 		if endpoint.AuthRequired {
 			handler = authMiddleware(handler)
 		}
 
-		// 2. Chống giả mạo Header X-User-* từ Client (giữa)
-		nextHandler := handler
+		// Tầng 2 — Xóa header định danh người dùng do client tự chèn vào
+		inner := handler
 		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			r.Header.Del("X-User-ID")
 			r.Header.Del("X-User-Role")
-			nextHandler.ServeHTTP(w, r)
+			inner.ServeHTTP(w, r)
 		})
 
-		// 3. Rate Limiter (ngoài cùng)
+		// Tầng 3 — Rate limiting theo IP
 		handler = middleware.RateLimitMiddleware(handler)
 
 		mux.Handle(pattern, handler)

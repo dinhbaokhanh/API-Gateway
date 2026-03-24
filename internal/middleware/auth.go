@@ -12,71 +12,71 @@ import (
 
 var jwtSecret []byte
 
-// InitJWT thiết lập JWT Secret key. Sẽ crash (panic) nếu không cấu hình!
+// InitJWT nạp JWT_SECRET từ biến môi trường. Crash nếu không tìm thấy để đảm bảo an toàn.
 func InitJWT() {
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
-		// Yêu cầu bắt buộc từ User: Crash lúc khởi động nếu không có JWT_SECRET
-		panic("CRITICAL: Biến môi trường JWT_SECRET bị thiếu. Hãy cấu hình để Gateway chạy an toàn!")
+		panic("CRITICAL: Thiếu biến môi trường JWT_SECRET — Gateway từ chối khởi động!")
 	}
 	jwtSecret = []byte(secret)
 }
 
-// AuthMiddlewareProvider trả về một HTTP middleware hoàn thiện, dùng cấu hình (Issuer, Audience) từ gateway.json
+// AuthMiddlewareProvider tạo middleware xác thực JWT cho từng route cụ thể.
+// Kiểm tra: định dạng Bearer, thuật toán HS256, exp/iss/aud/jti, Redis blacklist.
 func AuthMiddlewareProvider(jwtCfg config.JWTConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			
-			// 1. Phân tích header Authorization
+
+			// Lấy và kiểm tra định dạng header Authorization
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-				http.Error(w, "Unauthorized - Missing or invalid Authorization header", http.StatusUnauthorized)
+				http.Error(w, "Unauthorized - Thiếu hoặc sai định dạng Authorization header", http.StatusUnauthorized)
 				return
 			}
 			tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
 
-			// 2. Parse và xác minh Token chống alg:none attack và đảm bảo 4 claims (exp, iss, aud, jti)
+			// Parse token, chỉ chấp nhận HS256 — ngăn chặn tấn công alg:none
 			token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
-				// Ép kiểu xác nhận thuật toán HMAC
 				if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-					return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
+					return nil, fmt.Errorf("thuật toán ký không hợp lệ: %v", token.Header["alg"])
 				}
 				return jwtSecret, nil
-			}, jwt.WithValidMethods([]string{"HS256"}),
+			},
+				jwt.WithValidMethods([]string{"HS256"}),
 				jwt.WithExpirationRequired(),
 				jwt.WithIssuer(jwtCfg.Issuer),
-				jwt.WithAudience(jwtCfg.Audience))
+				jwt.WithAudience(jwtCfg.Audience),
+			)
 
 			if err != nil || !token.Valid {
-				http.Error(w, "Unauthorized - Invalid or expired token", http.StatusUnauthorized)
+				http.Error(w, "Unauthorized - Token không hợp lệ hoặc đã hết hạn", http.StatusUnauthorized)
 				return
 			}
 
-			// 3. Trích xuất Payload (Claims)
+			// Đọc claims từ payload
 			claims, ok := token.Claims.(jwt.MapClaims)
 			if !ok {
-				http.Error(w, "Unauthorized - Failed to read claims", http.StatusUnauthorized)
+				http.Error(w, "Unauthorized - Không đọc được thông tin token", http.StatusUnauthorized)
 				return
 			}
 
-			// 4. Kiểm tra Redis Blacklist bằng `jti`
+			// Kiểm tra jti tồn tại để tra cứu blacklist
 			jti, hasJti := claims["jti"].(string)
 			if !hasJti || jti == "" {
-				http.Error(w, "Unauthorized - Missing JTI claim in token", http.StatusUnauthorized)
+				http.Error(w, "Unauthorized - Token thiếu claim jti", http.StatusUnauthorized)
 				return
 			}
 
+			// Từ chối nếu jti đã bị revoke (người dùng đã đăng xuất hoặc token bị cướp)
 			if isBlacklisted(jti) {
-				http.Error(w, "Unauthorized - Token has been revoked", http.StatusUnauthorized)
+				http.Error(w, "Unauthorized - Token đã bị thu hồi", http.StatusUnauthorized)
 				return
 			}
 
-			// 5. Xử lý các Headers - Xóa chống giả mạo danh tính từ Client
+			// Xóa header giả mạo do client tự đặt, sau đó gắn lại từ claims đáng tin cậy
 			r.Header.Del("X-User-ID")
 			r.Header.Del("X-User-Role")
 
-			// Gắn thông tin vừa bóc ra được từ Token chuẩn vào Header cho backend
-			// Thông thường ID có thể nằm ở claim "id" hoặc "sub"
 			if userID, ok := claims["id"].(string); ok {
 				r.Header.Set("X-User-ID", userID)
 			} else if subID, ok := claims["sub"].(string); ok {
@@ -89,7 +89,6 @@ func AuthMiddlewareProvider(jwtCfg config.JWTConfig) func(http.Handler) http.Han
 				r.Header.Set("X-User-Role", role)
 			}
 
-			// Mọi thứ hoàn hảo, cho phép đi tiếp
 			next.ServeHTTP(w, r)
 		})
 	}

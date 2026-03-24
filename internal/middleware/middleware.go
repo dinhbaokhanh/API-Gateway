@@ -6,11 +6,10 @@ import (
 	"time"
 )
 
-// Middleware định nghĩa một lớp bọc HTTP Handler, giúp thực hiện logic chặn lọc trước khi vào Server
+// Middleware định nghĩa kiểu hàm bọc HTTP Handler
 type Middleware func(http.Handler) http.Handler
 
-// Chain là hàm gom tất cả middleware lại và bọc vào nhau như cấu trúc củ hành tây
-// Request đi từ ngoài vào trong, lớp cuối cùng sẽ là Router thực sự
+// Chain gom nhiều middleware thành một chuỗi xử lý, thứ tự từ ngoài vào trong
 func Chain(handler http.Handler, middlewares ...Middleware) http.Handler {
 	wrapped := handler
 	for i := len(middlewares) - 1; i >= 0; i-- {
@@ -19,41 +18,36 @@ func Chain(handler http.Handler, middlewares ...Middleware) http.Handler {
 	return wrapped
 }
 
-// RequestLogger: Ghi nhật ký mọi request đi qua API Gateway để xem thời gian xử lý nhanh hay chậm
+// RequestLogger ghi log method, đường dẫn và thời gian xử lý của mỗi request
 func RequestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		next.ServeHTTP(w, r) // Cho phép request trôi qua để thực thi
-		
-		// In ra Method, Đường dẫn, và Thời gian xử lý (VD: GET /api/users 12ms)
+		next.ServeHTTP(w, r)
 		log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(start))
 	})
 }
 
-// Recoverer: Đóng vai trò làm "Áo giáp bảo vệ". Nếu các hàm bên trong xảy ra lỗi nghiêm trọng (Panic), 
-// cái bọc này sẽ hứng lại vớt vát để Gateway không bị sập (Crash 100%)
+// Recoverer bắt mọi lỗi panic bên trong, ghi log và trả về 500 thay vì để Gateway sập
 func Recoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				log.Printf("Phát hiện lỗi nghiêm trọng (Panic recovered): %v", rec)
-				http.Error(w, "Lỗi máy chủ nội bộ (Internal Server Error)", http.StatusInternalServerError)
+				log.Printf("[PANIC] Phục hồi từ lỗi nghiêm trọng: %v", rec)
+				http.Error(w, "Lỗi máy chủ nội bộ", http.StatusInternalServerError)
 			}
 		}()
-
 		next.ServeHTTP(w, r)
 	})
 }
 
-// CORS: Chia sẻ tài nguyên nguồn gốc chéo. Cảnh báo cho trình duyệt biết 
-// là API Gateway này chấp nhận lời gọi từ các App/Domain độc lập (Ví dụ: React App)
+// CORS thiết lập header cho phép frontend gọi API từ domain khác (cross-origin)
 func CORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type,Authorization")
 
-		// Trình duyệt thường gửi method OPTIONS trước để chọc dò, nên mình đồng ý phản hồi luôn
+		// Trình duyệt gửi OPTIONS để kiểm tra trước (preflight), phản hồi ngay không cần xử lý tiếp
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return

@@ -9,28 +9,35 @@ import (
 	"github.com/dinhbaokhanh/Final-Project-API-Gateway/internal/routing"
 )
 
-// App là lõi trung tâm của API Gateway, chứa toàn bộ HTTP Server
+// App là lõi trung tâm của API Gateway
 type App struct {
 	server *http.Server
 }
 
-// Khởi tạo cấu trúc và quy trình của Gateway
+// New khởi tạo Gateway từ file cấu hình JSON
 func New(cfg *config.GatewayConfig) (*App, error) {
-	// 1. Tạo Dynamic Router từ cấu hình JSON
+	// Tạo dynamic router từ cấu hình đã đọc
 	router, err := routing.NewRouter(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	// 2. Bọc Router qua một chuỗi các Middleware (Phần mềm trung gian)
+	// Chuỗi middleware toàn cục — áp dụng cho mọi request theo thứ tự từ ngoài vào trong:
+	// RequestValidation (kiểm tra body/content-type)
+	//   -> AuditLogger (ghi log bảo mật)
+	//     -> Recoverer (chống crash)
+	//       -> RequestLogger (ghi log latency)
+	//         -> CORS
+	//           -> Router (định tuyến per-route)
 	handler := middleware.Chain(
 		router,
-		middleware.Recoverer,
-		middleware.RequestLogger,
 		middleware.CORS,
+		middleware.RequestLogger,
+		middleware.Recoverer,
+		middleware.AuditLoggerMiddleware,
+		middleware.RequestValidationMiddleware,
 	)
 
-	// 3. Khởi tạo HTTP Server trên cổng được chỉ định ở file config
 	return &App{
 		server: &http.Server{
 			Addr:    fmt.Sprintf(":%d", cfg.Port),
@@ -39,6 +46,7 @@ func New(cfg *config.GatewayConfig) (*App, error) {
 	}, nil
 }
 
+// Run bắt đầu lắng nghe và xử lý request
 func (a *App) Run() error {
 	return a.server.ListenAndServe()
 }
