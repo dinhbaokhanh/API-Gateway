@@ -33,7 +33,6 @@ func RevokeToken(jti string, expireAt time.Time) error {
 	return rdb.Set(context.Background(), "blacklist:"+jti, "revoked", time.Until(expireAt)).Err()
 }
 
-// isBlacklisted kiểm tra jti có nằm trong danh sách đen không
 func isBlacklisted(jti string) bool {
 	if rdb == nil || jti == "" {
 		return false
@@ -42,7 +41,8 @@ func isBlacklisted(jti string) bool {
 	if err == redis.Nil {
 		return false
 	} else if err != nil {
-		return false // Lỗi kết nối Redis — tạm cho qua để không block toàn bộ hệ thống
+		log.Printf("[LỖI BẢO MẬT] Redis blacklist lookup failed for jti %s: %v. Báo cáo failed-closed.", jti, err)
+		return true // Fail-closed: Coi như token bị reject nếu Redis bị lỗi
 	}
 	return val == "revoked"
 }

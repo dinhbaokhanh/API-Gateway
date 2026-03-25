@@ -85,16 +85,19 @@ func AuditLoggerMiddleware(next http.Handler) http.Handler {
 		wrapped := newResponseWriter(w)
 		next.ServeHTTP(wrapped, r)
 
-		// Sau khi toàn bộ chuỗi xử lý xong, ghi log bảo mật nếu là sự kiện đáng chú ý
+		// Phân loại: Lỗi liên quan đến bảo mật (4xx) HOẶC user đăng nhập thành công (2xx kèm X-User-ID)
 		statusCode := wrapped.statusCode
-		if statusCode == http.StatusUnauthorized ||
+		userID := r.Header.Get("X-User-ID")
+		isSecurityError := statusCode == http.StatusUnauthorized ||
 			statusCode == http.StatusForbidden ||
 			statusCode == http.StatusTooManyRequests ||
 			statusCode == http.StatusRequestEntityTooLarge ||
-			statusCode == http.StatusUnsupportedMediaType {
+			statusCode == http.StatusUnsupportedMediaType
 
-			// Xác định lý do bị từ chối dựa trên status code
-			reason := inferReason(statusCode, r)
+		isAuthSuccess := statusCode < 400 && userID != ""
+
+		if isSecurityError || isAuthSuccess {
+			reason := inferReason(statusCode, isAuthSuccess)
 
 			LogSecurityEvent(SecurityEvent{
 				Timestamp:  time.Now().UTC(),
@@ -103,7 +106,7 @@ func AuditLoggerMiddleware(next http.Handler) http.Handler {
 				Path:       r.URL.Path,
 				StatusCode: statusCode,
 				Reason:     reason,
-				UserID:     r.Header.Get("X-User-ID"),
+				UserID:     userID,
 				UserRole:   r.Header.Get("X-User-Role"),
 			})
 		}
@@ -111,7 +114,11 @@ func AuditLoggerMiddleware(next http.Handler) http.Handler {
 }
 
 // inferReason suy ra lý do từ chối theo status code của response
-func inferReason(statusCode int, r *http.Request) string {
+func inferReason(statusCode int, isAuthSuccess bool) string {
+	if isAuthSuccess {
+		return ReasonAuthOK
+	}
+
 	switch statusCode {
 	case http.StatusTooManyRequests:
 		return ReasonRateLimited

@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -10,20 +11,18 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var jwtSecret []byte
+// Removed static jwtSecret var.
+// It will be loaded dynamically via os.Getenv("JWT_SECRET")
 
-// InitJWT nạp JWT_SECRET từ biến môi trường. Crash nếu không tìm thấy để đảm bảo an toàn.
+// InitJWT ensures the environment variable is present on startup
 func InitJWT() {
-	secret := os.Getenv("JWT_SECRET")
-	if secret == "" {
+	if os.Getenv("JWT_SECRET") == "" {
 		panic("CRITICAL: Thiếu biến môi trường JWT_SECRET — Gateway từ chối khởi động!")
 	}
-	jwtSecret = []byte(secret)
 }
 
-// AuthMiddlewareProvider tạo middleware xác thực JWT cho từng route cụ thể.
-// Kiểm tra: định dạng Bearer, thuật toán HS256, exp/iss/aud/jti, Redis blacklist.
-func AuthMiddlewareProvider(jwtCfg config.JWTConfig) func(http.Handler) http.Handler {
+// AuthMiddlewareProvider tạo middleware xác thực JWT và kiểm tra RBAC (Role-Based Access Control)
+func AuthMiddlewareProvider(jwtCfg config.JWTConfig, requiredRoles []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
@@ -35,18 +34,24 @@ func AuthMiddlewareProvider(jwtCfg config.JWTConfig) func(http.Handler) http.Han
 			}
 			tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
 
-			// Parse token, chỉ chấp nhận HS256 — ngăn chặn tấn công alg:none
-			token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
-				if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-					return nil, fmt.Errorf("thuật toán ký không hợp lệ: %v", token.Header["alg"])
-				}
-				return jwtSecret, nil
-			},
+			// Lấy secret dynamically để không bị cứng
+			jwtSecret := []byte(os.Getenv("JWT_SECRET"))
+
+			// Khởi tạo Parser với các cấu hình validation và tùy chọn giữ nguyên số lớn (JSONNumber)
+			parser := jwt.NewParser(
 				jwt.WithValidMethods([]string{"HS256"}),
 				jwt.WithExpirationRequired(),
 				jwt.WithIssuer(jwtCfg.Issuer),
 				jwt.WithAudience(jwtCfg.Audience),
+				jwt.WithJSONNumber(),
 			)
+
+			token, err := parser.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+				if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+					return nil, fmt.Errorf("thuật toán ký không hợp lệ: %v", token.Header["alg"])
+				}
+				return jwtSecret, nil
+			})
 
 			if err != nil || !token.Valid {
 				http.Error(w, "Unauthorized - Token không hợp lệ hoặc đã hết hạn", http.StatusUnauthorized)
@@ -73,19 +78,49 @@ func AuthMiddlewareProvider(jwtCfg config.JWTConfig) func(http.Handler) http.Han
 				return
 			}
 
-			// Xóa header giả mạo do client tự đặt, sau đó gắn lại từ claims đáng tin cậy
+			// Xóa header giả mạo do client tự đặt
 			r.Header.Del("X-User-ID")
 			r.Header.Del("X-User-Role")
 
+			// Lấy UserID (tránh lỗi trống / float64)
+			var userIDStr string
 			if userID, ok := claims["id"].(string); ok {
-				r.Header.Set("X-User-ID", userID)
+				userIDStr = userID
 			} else if subID, ok := claims["sub"].(string); ok {
-				r.Header.Set("X-User-ID", subID)
-			} else if floatID, ok := claims["id"].(float64); ok {
-				r.Header.Set("X-User-ID", fmt.Sprintf("%.0f", floatID))
+				userIDStr = subID
+			} else if numID, ok := claims["id"].(json.Number); ok {
+				userIDStr = numID.String() // Giữ nguyên độ dài, không lo mất số
 			}
 
-			if role, ok := claims["role"].(string); ok {
+			// Chặn Bypass nếu ID trống rỗng
+			if strings.TrimSpace(userIDStr) == "" {
+				http.Error(w, "Unauthorized - Invalid or Empty User ID in Token", http.StatusUnauthorized)
+				return
+			}
+			r.Header.Set("X-User-ID", userIDStr)
+
+			role, hasRole := claims["role"].(string)
+			// RBAC Validation (kiểm tra Role)
+			if len(requiredRoles) > 0 {
+				if !hasRole || role == "" {
+					http.Error(w, "Forbidden - Missing Role Claim", http.StatusForbidden)
+					return
+				}
+				
+				isAllowed := false
+				for _, reqRole := range requiredRoles {
+					if role == reqRole {
+						isAllowed = true
+						break
+					}
+				}
+				if !isAllowed {
+					http.Error(w, "Forbidden - Insufficient Permissions", http.StatusForbidden)
+					return
+				}
+			}
+
+			if hasRole && role != "" {
 				r.Header.Set("X-User-Role", role)
 			}
 

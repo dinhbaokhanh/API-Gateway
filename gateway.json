@@ -1,5 +1,6 @@
 {
   "port": 8080,
+  "timeout_seconds": 15,
   "jwt": {
     "issuer": "ptit-backend",
     "audience": "ptit-gateway"
@@ -49,6 +50,7 @@
       "endpoint": "/api/posts/new",
       "method": "POST",
       "auth_required": true,
+      "required_roles": ["admin", "teacher"],
       "backend": [
         {
           "host": [

@@ -20,13 +20,24 @@ var allowedContentTypes = []string{
 // Được áp dụng toàn cục trước tất cả các middleware khác.
 func RequestValidationMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Bọc body bằng MaxBytesReader để tự động từ chối nếu vượt giới hạn.
-		// Không đọc/buffer body — chỉ giới hạn chiều dài stream.
-		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+		// Nhận diện request có mang payload: ContentLength > 0 hoặc dùng Chunked Encoding
+		hasBody := r.ContentLength > 0 || len(r.TransferEncoding) > 0
 
-		// Chỉ kiểm tra Content-Type khi request có mang theo body (POST, PUT, PATCH)
-		ct := r.Header.Get("Content-Type")
-		if ct != "" && r.ContentLength != 0 {
+		// Bọc body bằng MaxBytesReader để tự động từ chối nếu vượt giới hạn (áp dụng cả với chunked)
+		if hasBody {
+			r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+			ct := r.Header.Get("Content-Type")
+
+			if ct == "" {
+				// Cố ý gửi payload không kèm định dạng
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnsupportedMediaType)
+				_ = json.NewEncoder(w).Encode(map[string]string{
+					"error": "missing_content_type",
+				})
+				return
+			}
+
 			mediaType := strings.ToLower(strings.TrimSpace(strings.Split(ct, ";")[0]))
 			if !isAllowedContentType(mediaType) {
 				w.Header().Set("Content-Type", "application/json")

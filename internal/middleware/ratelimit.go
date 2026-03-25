@@ -9,19 +9,15 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// visitor lưu rate limiter và thời điểm lần cuối được thấy của một IP
 type visitor struct {
 	limiter  *rate.Limiter
 	lastSeen time.Time
 }
 
-var (
-	visitors = make(map[string]*visitor)
-	mu       sync.Mutex
-)
+// Dùng sync.Map để xử lý truy cập đồng thời triệt để, khắc phục Race Condition
+var visitors sync.Map
 
-// InitRateLimiter khởi động goroutine dọn dẹp IP không hoạt động mỗi 5 phút.
-// Tránh memory leak khi hàng nghìn IP unique tích lũy không được giải phóng.
+// InitRateLimiter khởi động worker dọn dẹp bộ nhớ mỗi 5 phút.
 func InitRateLimiter() {
 	go cleanupVisitors()
 }
@@ -31,32 +27,30 @@ func cleanupVisitors() {
 	for {
 		time.Sleep(5 * time.Minute)
 
-		mu.Lock()
-		for ip, v := range visitors {
+		visitors.Range(func(key, value interface{}) bool {
+			v := value.(*visitor)
 			if time.Since(v.lastSeen) > 10*time.Minute {
-				delete(visitors, ip)
+				visitors.Delete(key)
 			}
-		}
-		mu.Unlock()
+			return true // Tiếp tục vòng lặp
+		})
 	}
 }
 
-// getVisitor trả về rate limiter của IP, tạo mới nếu chưa tồn tại
+// getVisitor trả về rate limiter của một IP
 func getVisitor(ip string) *rate.Limiter {
-	mu.Lock()
-	defer mu.Unlock()
+	// Lấy hoặc khởi tạo Limiter mới (tối đa 20 req/s, burst 20)
+	vInfo, loaded := visitors.LoadOrStore(ip, &visitor{
+		limiter:  rate.NewLimiter(rate.Limit(20), 20),
+		lastSeen: time.Now(),
+	})
 
-	v, exists := visitors[ip]
-	if !exists {
-		// Cho phép tối đa 20 request/giây, burst tối đa 20
-		v = &visitor{
-			limiter: rate.NewLimiter(rate.Limit(20), 20),
-		}
-		visitors[ip] = v
+	v := vInfo.(*visitor)
+	if loaded {
+		// Dù đã có sẵn, ta vẫn cập nhật lại thời gian lastSeen
+		v.lastSeen = time.Now()
 	}
 
-	// Cập nhật thời gian hoạt động để cleanup goroutine không xóa nhầm
-	v.lastSeen = time.Now()
 	return v.limiter
 }
 

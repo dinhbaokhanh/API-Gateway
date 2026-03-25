@@ -14,17 +14,19 @@ type JWTConfig struct {
 
 // GatewayConfig là cấu trúc gốc chứa toàn bộ cài đặt của Gateway (đọc từ file JSON)
 type GatewayConfig struct {
-	Port      int              `json:"port"`
-	JWT       JWTConfig        `json:"jwt"`
-	Endpoints []EndpointConfig `json:"endpoints"`
+	Port          int              `json:"port"`
+	TimeoutSeconds int             `json:"timeout_seconds"`
+	JWT           JWTConfig        `json:"jwt"`
+	Endpoints     []EndpointConfig `json:"endpoints"`
 }
 
 // EndpointConfig định nghĩa một API Route mà Gateway sẽ mở ra để Frontend gọi
 type EndpointConfig struct {
-	Endpoint     string          `json:"endpoint"`
-	Method       string          `json:"method"`
-	AuthRequired bool            `json:"auth_required"`
-	Backend      []BackendConfig `json:"backend"`
+	Endpoint      string          `json:"endpoint"`
+	Method        string          `json:"method"`
+	AuthRequired  bool            `json:"auth_required"`
+	RequiredRoles []string        `json:"required_roles"`
+	Backend       []BackendConfig `json:"backend"`
 }
 
 // BackendConfig chứa thông tin về các Service phía sau tương ứng với Endpoint phía trên
