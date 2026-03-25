@@ -3,6 +3,8 @@ package middleware
 import (
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 )
 
@@ -40,14 +42,46 @@ func Recoverer(next http.Handler) http.Handler {
 	})
 }
 
-// CORS thiết lập header cho phép frontend gọi API từ domain khác (cross-origin)
+// CORS thiết lập header theo Whitelist được cho phép từ `.env`
 func CORS(next http.Handler) http.Handler {
+	// Nạp danh sách từ cấu hình môi trường (Ví dụ: "http://localhost:3000, https://soc.ptit.edu.vn")
+	allowedOriginsStr := os.Getenv("CORS_ALLOWED_ORIGINS")
+	var allowedOrigins []string
+	if allowedOriginsStr != "" {
+		parts := strings.Split(allowedOriginsStr, ",")
+		for _, o := range parts {
+			allowedOrigins = append(allowedOrigins, strings.TrimSpace(o))
+		}
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := r.Header.Get("Origin")
+		allowOrigin := ""
+
+		if len(allowedOrigins) == 0 {
+			allowOrigin = "*" // Fallback bảo vệ hệ thống không bị panic nếu chưa cấu hình
+		} else {
+			// Duyệt qua Whitelist để cấp quyền cho đúng domain gọi tới
+			for _, o := range allowedOrigins {
+				if o == "*" || o == origin {
+					allowOrigin = origin
+					break
+				}
+			}
+		}
+
+		if allowOrigin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", allowOrigin)
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type,Authorization")
+		
+		// Kích hoạt Credentials (Cookie-based auth) khi được chỉ định đích danh (không phải wildcard *)
+		if allowOrigin != "" && allowOrigin != "*" {
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
 
-		// Trình duyệt gửi OPTIONS để kiểm tra trước (preflight), phản hồi ngay không cần xử lý tiếp
+		// Trình duyệt gửi OPTIONS để kiểm tra trước (preflight)
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return

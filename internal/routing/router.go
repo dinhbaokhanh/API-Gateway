@@ -23,13 +23,12 @@ func NewRouter(cfg *config.GatewayConfig) (http.Handler, error) {
 	// Các route khác sẽ được load từ file config
 
 	for _, endpoint := range cfg.Endpoints {
-		if len(endpoint.Backend) == 0 || len(endpoint.Backend[0].Host) == 0 {
+		targets := endpoint.Backend[0].Host
+		if len(targets) == 0 {
 			continue
 		}
 
-		targetURL := endpoint.Backend[0].Host[0]
-
-		reverseProxy, err := proxy.NewReverseProxy(targetURL, cfg.TimeoutSeconds)
+		reverseProxy, err := proxy.NewLoadBalancedProxy(targets, cfg.TimeoutSeconds)
 		if err != nil {
 			return nil, fmt.Errorf("URL backend không hợp lệ cho endpoint %s: %w", endpoint.Endpoint, err)
 		}
@@ -40,7 +39,7 @@ func NewRouter(cfg *config.GatewayConfig) (http.Handler, error) {
 			pattern = fmt.Sprintf("%s %s", strings.ToUpper(endpoint.Method), endpoint.Endpoint)
 		}
 
-		fmt.Printf("[Router] %-35s -> %s\n", pattern, targetURL)
+		fmt.Printf("[Router] %-35s -> %s\n", pattern, strings.Join(targets, ", "))
 
 		// reverseProxy -> (JWT Auth nếu cần) -> Xóa header giả mạo -> RateLimit
 		var handler http.Handler = reverseProxy
