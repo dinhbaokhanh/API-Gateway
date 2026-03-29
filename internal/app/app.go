@@ -36,10 +36,9 @@ func New(cfg *config.GatewayConfig) (*App, error) {
 	return &App{
 		server: &http.Server{
 			Addr:         fmt.Sprintf(":%d", cfg.Port),
-			Handler:      handler,
-			ReadTimeout:  15 * time.Second, // Tối đa 15s đọc toàn bộ request từ client
-			WriteTimeout: 20 * time.Second, // Tối đa 20s ghi response về client
-			IdleTimeout:  60 * time.Second, // Giữ kết nối keep-alive tối đa 60s
+			Handler:           handler,
+			ReadHeaderTimeout: 15 * time.Second, // Tối đa 15s đọc Header
+			IdleTimeout:       120 * time.Second, // Giữ kết nối keep-alive tối đa 120s
 		},
 	}, nil
 }

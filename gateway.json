@@ -37,6 +37,7 @@
       "__comment_posts": "=== POST SERVICE - PORT 8082 ===",
       "endpoint": "/api/posts",
       "method": "GET",
+      "cache_ttl_seconds": 60,
       "backend": [
         {
           "host": [

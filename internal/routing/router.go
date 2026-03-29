@@ -57,6 +57,11 @@ func NewRouter(cfg *config.GatewayConfig) (http.Handler, error) {
 			inner.ServeHTTP(w, r)
 		})
 
+		// Caching Redis (Chỉ áp dụng các Endpoint khai báo CacheTTL, sau khi đã chặn Authentication)
+		if endpoint.CacheTTLSeconds > 0 {
+			handler = middleware.CacheMiddleware(endpoint.CacheTTLSeconds)(handler)
+		}
+
 		// Rate limiting theo IP
 		handler = middleware.RateLimitMiddleware(handler)
 

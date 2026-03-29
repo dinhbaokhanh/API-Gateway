@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"sync/atomic"
 	"time"
+
+	"github.com/sony/gobreaker/v2"
 )
 
 // RoundRobinProxy phân tải HTTP traffic lần lượt qua các backend để tăng năng lực phục vụ
@@ -39,9 +41,9 @@ func NewLoadBalancedProxy(targets []string, timeoutSec int) (http.Handler, error
 	// Dùng chung cấu hình Transport cho tất cả proxy để tối ưu Connection Pool
 	transport := &http.Transport{
 		ResponseHeaderTimeout: timeout,
-		MaxIdleConns:          100,
-		MaxIdleConnsPerHost:   10,
-		IdleConnTimeout:       90 * time.Second,
+		MaxIdleConns:          5000,
+		MaxIdleConnsPerHost:   1000,
+		IdleConnTimeout:       120 * time.Second,
 	}
 
 	proxies := make([]*httputil.ReverseProxy, 0, len(targets))
@@ -53,7 +55,24 @@ func NewLoadBalancedProxy(targets []string, timeoutSec int) (http.Handler, error
 		}
 
 		p := httputil.NewSingleHostReverseProxy(targetURL)
-		p.Transport = transport
+
+		// Mỗi target có một Circuit Breaker độc lập (bảo vệ Host đó)
+		cb := gobreaker.NewCircuitBreaker[*http.Response](gobreaker.Settings{
+			Name:        "CB-" + targetURL.Host,
+			MaxRequests: 5,                  // Số request cho phép thử qua khi Half-Open
+			Interval:    10 * time.Second,   // Thời gian đếm lỗi để reset counter vòng lặp
+			Timeout:     15 * time.Second,   // Thời gian Open (15s sẽ chuyển về Half-Open)
+			ReadyToTrip: func(counts gobreaker.Counts) bool {
+				failureRatio := float64(counts.TotalFailures) / float64(counts.Requests)
+				// Cầu dao sập nếu lượng request >= 10 và tỉ lệ rớt >= 50%
+				return counts.Requests >= 10 && failureRatio >= 0.5
+			},
+		})
+
+		p.Transport = &breakerTransport{
+			cb:        cb,
+			transport: transport,
+		}
 
 		// Ghi đè Director để sửa lỗi header Host
 		originalDirector := p.Director
@@ -76,4 +95,22 @@ func NewLoadBalancedProxy(targets []string, timeoutSec int) (http.Handler, error
 
 	// Trả về Load Balancer cho nhiều server
 	return &RoundRobinProxy{proxies: proxies}, nil
+}
+
+// breakerTransport bọc http.RoundTripper qua cơ chế Circuit Breaker
+type breakerTransport struct {
+	cb        *gobreaker.CircuitBreaker[*http.Response]
+	transport http.RoundTripper
+}
+
+func (b *breakerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Execute chạy code HTTP call và theo dõi kết quả trả về
+	resp, err := b.cb.Execute(func() (*http.Response, error) {
+		return b.transport.RoundTrip(req)
+	})
+	if err != nil {
+		// Nếu CB Open, err sẽ tự văng ra, ReverseProxy nhận được err và đẩy vào ErrorHandler
+		return nil, err
+	}
+	return resp, nil
 }

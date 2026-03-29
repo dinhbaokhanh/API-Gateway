@@ -24,9 +24,10 @@ type GatewayConfig struct {
 type EndpointConfig struct {
 	Endpoint      string          `json:"endpoint"`
 	Method        string          `json:"method"`
-	AuthRequired  bool            `json:"auth_required"`
-	RequiredRoles []string        `json:"required_roles"`
-	Backend       []BackendConfig `json:"backend"`
+	AuthRequired    bool            `json:"auth_required"`
+	RequiredRoles   []string        `json:"required_roles"`
+	CacheTTLSeconds int             `json:"cache_ttl_seconds"`
+	Backend         []BackendConfig `json:"backend"`
 }
 
 // BackendConfig chứa thông tin về các Service phía sau tương ứng với Endpoint phía trên
