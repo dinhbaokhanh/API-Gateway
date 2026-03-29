@@ -44,12 +44,12 @@ func NewRouter(cfg *config.GatewayConfig) (http.Handler, error) {
 		// reverseProxy -> (JWT Auth nếu cần) -> Xóa header giả mạo -> RateLimit
 		var handler http.Handler = reverseProxy
 
-		// Tầng 1 — Xác thực JWT (chỉ áp dụng nếu route yêu cầu) + RBAC Check
+		// Xác thực JWT + RBAC Check
 		if endpoint.AuthRequired {
 			handler = middleware.AuthMiddlewareProvider(cfg.JWT, endpoint.RequiredRoles)(handler)
 		}
 
-		// Tầng 2 — Xóa header định danh người dùng do client tự chèn vào
+		// Xóa header định danh người dùng do client tự chèn vào
 		inner := handler
 		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			r.Header.Del("X-User-ID")
@@ -57,7 +57,7 @@ func NewRouter(cfg *config.GatewayConfig) (http.Handler, error) {
 			inner.ServeHTTP(w, r)
 		})
 
-		// Tầng 3 — Rate limiting theo IP
+		// Rate limiting theo IP
 		handler = middleware.RateLimitMiddleware(handler)
 
 		mux.Handle(pattern, handler)

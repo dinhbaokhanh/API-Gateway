@@ -70,7 +70,6 @@ func (rw *responseWriter) WriteHeader(code int) {
 }
 
 // AuditLoggerMiddleware bọc toàn bộ chuỗi middleware, ghi lại kết quả cuối cùng của mỗi request.
-// Phải được đặt ở vị trí ngoài cùng để bắt được mọi từ chối bên trong.
 func AuditLoggerMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Lấy IP thực của client

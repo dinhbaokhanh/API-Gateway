@@ -5,23 +5,20 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/dinhbaokhanh/Final-Project-API-Gateway/internal/config"
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// Removed static jwtSecret var.
-// It will be loaded dynamically via os.Getenv("JWT_SECRET")
-
-// InitJWT ensures the environment variable is present on startup
 func InitJWT() {
 	if os.Getenv("JWT_SECRET") == "" {
 		panic("CRITICAL: Thiếu biến môi trường JWT_SECRET — Gateway từ chối khởi động!")
 	}
 }
 
-// AuthMiddlewareProvider tạo middleware xác thực JWT và kiểm tra RBAC (Role-Based Access Control)
+// AuthMiddlewareProvider tạo middleware xác thực JWT và kiểm tra RBAC
 func AuthMiddlewareProvider(jwtCfg config.JWTConfig, requiredRoles []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -33,8 +30,6 @@ func AuthMiddlewareProvider(jwtCfg config.JWTConfig, requiredRoles []string) fun
 				return
 			}
 			tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
-
-			// Lấy secret dynamically để không bị cứng
 			jwtSecret := []byte(os.Getenv("JWT_SECRET"))
 
 			// Khởi tạo Parser với các cấu hình validation và tùy chọn giữ nguyên số lớn (JSONNumber)
@@ -107,13 +102,7 @@ func AuthMiddlewareProvider(jwtCfg config.JWTConfig, requiredRoles []string) fun
 					return
 				}
 				
-				isAllowed := false
-				for _, reqRole := range requiredRoles {
-					if role == reqRole {
-						isAllowed = true
-						break
-					}
-				}
+				isAllowed := slices.Contains(requiredRoles, role)
 				if !isAllowed {
 					http.Error(w, "Forbidden - Insufficient Permissions", http.StatusForbidden)
 					return

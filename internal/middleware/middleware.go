@@ -44,7 +44,6 @@ func Recoverer(next http.Handler) http.Handler {
 
 // CORS thiết lập header theo Whitelist được cho phép từ `.env`
 func CORS(next http.Handler) http.Handler {
-	// Nạp danh sách từ cấu hình môi trường (Ví dụ: "http://localhost:3000, https://soc.ptit.edu.vn")
 	allowedOriginsStr := os.Getenv("CORS_ALLOWED_ORIGINS")
 	var allowedOrigins []string
 	if allowedOriginsStr != "" {
@@ -76,12 +75,12 @@ func CORS(next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type,Authorization")
 		
-		// Kích hoạt Credentials (Cookie-based auth) khi được chỉ định đích danh (không phải wildcard *)
+		// Kích hoạt Credentials (Cookie-based auth) khi được chỉ định đích danh
 		if allowOrigin != "" && allowOrigin != "*" {
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 		}
 
-		// Trình duyệt gửi OPTIONS để kiểm tra trước (preflight)
+		// Trình duyệt gửi OPTIONS để kiểm tra trước
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return

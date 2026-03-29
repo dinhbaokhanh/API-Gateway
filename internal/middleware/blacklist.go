@@ -10,7 +10,7 @@ import (
 
 var rdb *redis.Client
 
-// InitRedis khởi tạo kết nối Redis. Crash nếu không kết nối được — blacklist yêu cầu Redis hoạt động.
+// InitRedis khởi tạo kết nối Redis.
 func InitRedis(addr string) {
 	rdb = redis.NewClient(&redis.Options{Addr: addr})
 
@@ -21,8 +21,7 @@ func InitRedis(addr string) {
 	log.Printf("[OK] Đã kết nối Redis tại %s\n", addr)
 }
 
-// RevokeToken thêm jti vào danh sách đen với TTL bằng thời gian sống còn lại của token.
-// Redis tự dọn dẹp sau khi token hết hạn — không tốn bộ nhớ vô thời hạn.
+// Redis tự dọn dẹp sau khi token hết hạn.
 func RevokeToken(jti string, expireAt time.Time) error {
 	if rdb == nil {
 		return nil
@@ -42,7 +41,7 @@ func isBlacklisted(jti string) bool {
 		return false
 	} else if err != nil {
 		log.Printf("[LỖI BẢO MẬT] Redis blacklist lookup failed for jti %s: %v. Báo cáo failed-closed.", jti, err)
-		return true // Fail-closed: Coi như token bị reject nếu Redis bị lỗi
+		return true
 	}
 	return val == "revoked"
 }

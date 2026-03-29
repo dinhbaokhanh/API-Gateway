@@ -3,13 +3,12 @@ package middleware
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 )
 
-// Giới hạn kích thước body tối đa là 1MB
 const maxBodyBytes = 1 << 20 // 1MB
 
-// Danh sách Content-Type được chấp nhận khi body có dữ liệu
 var allowedContentTypes = []string{
 	"application/json",
 	"application/x-www-form-urlencoded",
@@ -17,7 +16,6 @@ var allowedContentTypes = []string{
 }
 
 // RequestValidationMiddleware kiểm tra kích thước và định dạng của request đến.
-// Được áp dụng toàn cục trước tất cả các middleware khác.
 func RequestValidationMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Nhận diện request có mang payload: ContentLength > 0 hoặc dùng Chunked Encoding
@@ -29,7 +27,6 @@ func RequestValidationMiddleware(next http.Handler) http.Handler {
 			ct := r.Header.Get("Content-Type")
 
 			if ct == "" {
-				// Cố ý gửi payload không kèm định dạng
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnsupportedMediaType)
 				_ = json.NewEncoder(w).Encode(map[string]string{
@@ -53,7 +50,6 @@ func RequestValidationMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 
 		// Kiểm tra xem lỗi 413 có bị trigger bởi MaxBytesReader không
-		// (MaxBytesReader tự động set lỗi khi body vượt giới hạn)
 		if r.Body != nil {
 			buf := make([]byte, 1)
 			_, readErr := r.Body.Read(buf)
@@ -71,10 +67,5 @@ func RequestValidationMiddleware(next http.Handler) http.Handler {
 
 // isAllowedContentType kiểm tra xem media type có nằm trong danh sách cho phép không
 func isAllowedContentType(mediaType string) bool {
-	for _, allowed := range allowedContentTypes {
-		if mediaType == allowed {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(allowedContentTypes, mediaType)
 }

@@ -15,13 +15,10 @@ import (
 )
 
 func main() {
-	// Nạp biến môi trường từ .env (dev) hoặc process env (production)
 	_ = godotenv.Load()
 
-	// Audit logger phải khởi động trước mọi thứ để bắt sự kiện từ đầu
 	middleware.InitAuditLogger()
 
-	// Đọc cấu hình Gateway từ gateway.json
 	cfg, err := config.Load("gateway.json")
 	if err != nil {
 		log.Fatalf("Không thể tải file cấu hình: %v", err)
@@ -50,7 +47,6 @@ func main() {
 	go func() {
 		log.Printf("PTIT Gateway đang lắng nghe tại cổng :%d", cfg.Port)
 		if err := gateway.Run(); err != nil {
-			// http.ErrServerClosed là lỗi bình thường khi Shutdown được gọi — bỏ qua
 			log.Printf("Gateway dừng: %v", err)
 		}
 	}()
@@ -59,7 +55,7 @@ func main() {
 	// SIGINT = Ctrl+C, SIGTERM = Docker stop / Kubernetes kill
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit // Chặn ở đây cho đến khi nhận được tín hiệu
+	<-quit
 
 	log.Println("Đang dừng Gateway... Chờ các request hiện tại hoàn thành (tối đa 30s)")
 

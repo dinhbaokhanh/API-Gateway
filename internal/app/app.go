@@ -23,7 +23,6 @@ func New(cfg *config.GatewayConfig) (*App, error) {
 		return nil, err
 	}
 
-	// Chuỗi middleware toàn cục — thứ tự từ ngoài vào trong:
 	// RequestValidation -> AuditLogger -> Recoverer -> RequestLogger -> CORS -> Router
 	handler := middleware.Chain(
 		router,
@@ -51,7 +50,6 @@ func (a *App) Run() error {
 }
 
 // Shutdown dừng Gateway một cách nhẹ nhàng — cho phép các request hiện tại hoàn thành
-// trước khi ngắt kết nối, tránh mất dữ liệu khi deploy hoặc restart.
 func (a *App) Shutdown(ctx context.Context) error {
 	return a.server.Shutdown(ctx)
 }

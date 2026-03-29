@@ -46,7 +46,6 @@ func Load(configPath string) (*GatewayConfig, error) {
 	var config GatewayConfig
 	decoder := json.NewDecoder(file)
 	
-	// Giải mã nội dung JSON đắp vào struct GatewayConfig
 	if err := decoder.Decode(&config); err != nil {
 		return nil, fmt.Errorf("gặp lỗi cú pháp khi parse cấu hình JSON: %w", err)
 	}
